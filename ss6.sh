@@ -35,23 +35,8 @@ systemctl restart shadowsocks-libev
 ENCODED=$(echo -n "$METHOD:$PASSWORD@$IPV6_ADDR:$PORT" | base64 -w 0)
 SS_LINK="ss://$ENCODED#$TAG"
 
-# ========= Clash 节点（使用单引号） =========
+# ========= Clash 节点 =========
 CLASH_NODE="- { name: '$TAG', type: ss, server: '$IPV6_ADDR', port: $PORT, cipher: '$METHOD', password: '$PASSWORD', udp: true }"
-
-# ========= V2rayN JSON 节点 =========
-V2RAYN_JSON=$(cat <<EOF
-{
-  "remarks": "$TAG",
-  "address": "$IPV6_ADDR",
-  "method": "$METHOD",
-  "password": "$PASSWORD",
-  "port": $PORT,
-  "plugin": "",
-  "plugin_opts": "",
-  "protocol": "shadowsocks"
-}
-EOF
-)
 
 # ========= 输出结果 =========
 echo -e "\n✅ Shadowsocks IPv6 安装完成！\n"
@@ -65,10 +50,7 @@ echo -e "\n========= 📱 SS 链接 ========="
 echo "$SS_LINK"
 qrencode -t ANSIUTF8 "$SS_LINK"
 
-echo -e "\n========= 🧩 Clash 节点（单引号） ========="
+echo -e "\n========= 🧩 Clash 节点========="
 echo "$CLASH_NODE"
-
-echo -e "\n========= 💻 V2rayN JSON节点 ========="
-echo "$V2RAYN_JSON"
 
 echo -e "\n🎉 完成！请保存以上节点用于各平台导入。"
