@@ -90,9 +90,7 @@ check_ip_stack() {
     # 检查结果 - 必须有 IPv6 才继续
     if [ "$IPV6_SUPPORTED" = false ]; then
         echo -e "${RED}❌ 未检测到 IPv6 地址${NC}"
-        echo -e "${YELLOW}⚠️  此脚本仅支持有 IPv6 的服务器${NC}"
-        echo -e "${YELLOW}   纯 IPv4 环境下 Shadowsocks 容易被封禁${NC}"
-        echo -e "${YELLOW}   建议使用支持 IPv6 的 VPS${NC}"
+        echo -e "${YELLOW}⚠️  此脚本仅支持有 IPv6 的VPS${NC}"
         exit 1
     fi
     
