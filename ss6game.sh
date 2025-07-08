@@ -175,10 +175,18 @@ check_ip_quality() {
     if [[ "$GAME_BLOCKED" == true ]]; then
         echo -e "${RED}❌ 此 IP 不适合 Ingress/Pokemon GO${NC}"
         echo -e "\n建议采取以下措施："
-        echo -e "1. ${YELLOW}使用 WARP 中转（选项 3）${NC}"
+        echo -e "1. ${YELLOW}使用 WARP 中转（选项 3）- 立即可用${NC}"
         echo -e "2. ${YELLOW}更换 VPS 提供商${NC}"
-        echo -e "   推荐: RackNerd、Vultr（日韩）、Oracle Cloud"
+        echo -e "   ${GREEN}亚洲推荐:${NC}"
+        echo -e "   - ConoHa VPS (日本本土)"
+        echo -e "   - Sakura VPS (日本本土)"
+        echo -e "   - RackNerd (美国，IP质量好)"
+        echo -e "   ${GREEN}欧美推荐:${NC}"
+        echo -e "   - BuyVM/Frantech (小众)"
+        echo -e "   - Hetzner (德国)"
+        echo -e "   - Contabo (德国，便宜)"
         echo -e "3. ${YELLOW}使用住宅代理服务${NC}"
+        echo -e "\n${PURPLE}提示: 大部分主流VPS都被封禁，建议直接使用 WARP！${NC}"
     else
         echo -e "${GREEN}✅ IP 暂时可用于游戏${NC}"
         echo -e "\n注意事项："
@@ -503,63 +511,139 @@ install_warp() {
     print_banner
     echo -e "${YELLOW}🚀 开始安装 Cloudflare WARP...${NC}\n"
     
+    # 检查系统
+    if ! command -v lsb_release &> /dev/null; then
+        apt-get update && apt-get install -y lsb-release
+    fi
+    
     # 检查是否已安装
     if command -v warp-cli &> /dev/null; then
         echo -e "${GREEN}✅ WARP 已安装${NC}"
         warp-cli --version
         echo ""
-        read -p "是否重新配置 WARP？(y/n): " reconfigure
-        if [[ "$reconfigure" != "y" ]]; then
-            return
+        
+        # 检查连接状态
+        if warp-cli status 2>/dev/null | grep -q "Connected"; then
+            echo -e "${GREEN}WARP 已连接${NC}"
+            read -p "是否重新配置？(y/n): " reconfigure
+            if [[ "$reconfigure" != "y" ]]; then
+                return
+            fi
         fi
     fi
     
     # 安装 WARP
     echo -e "${YELLOW}添加 Cloudflare 仓库...${NC}"
+    
+    # 先安装必要的工具
+    apt update
+    apt install -y curl gnupg lsb-release
+    
+    # 添加 GPG key
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+    
+    # 添加仓库
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list
     
+    # 更新并安装
     apt update
     apt install -y cloudflare-warp
+    
+    # 启动服务
+    systemctl enable warp-svc
+    systemctl start warp-svc
+    
+    # 等待服务启动
+    sleep 3
     
     # 配置 WARP
     echo -e "${YELLOW}配置 WARP...${NC}"
     
-    # 注册
-    yes | warp-cli register
+    # 断开可能的连接
+    warp-cli disconnect 2>/dev/null || true
+    
+    # 注册（使用 yes 自动确认）
+    yes | warp-cli register || true
     
     # 设置为代理模式
     warp-cli set-mode proxy
     warp-cli set-proxy-port 40000
     
-    # 设置 DNS
-    warp-cli set-custom-endpoint 162.159.36.1:2408
+    # 设置其他选项
+    warp-cli set-families-mode off
+    warp-cli set-dns-log-enabled false
     
     # 连接
+    echo -e "${YELLOW}连接 WARP...${NC}"
     warp-cli connect
     
     # 等待连接
-    sleep 5
+    echo -n "等待连接"
+    for i in {1..10}; do
+        if warp-cli status 2>/dev/null | grep -q "Connected"; then
+            echo -e " ${GREEN}成功！${NC}"
+            break
+        fi
+        echo -n "."
+        sleep 1
+    done
     
     # 验证连接
     echo -e "\n${YELLOW}验证 WARP 连接...${NC}"
     if curl --proxy socks5://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace/ 2>/dev/null | grep -q "warp=on"; then
         echo -e "${GREEN}✅ WARP 连接成功！${NC}"
         
-        # 创建 WARP 接口路由（用于 SS）
-        echo -e "\n${YELLOW}配置 WARP 网络接口...${NC}"
+        # 测试游戏连通性
+        echo -e "\n${YELLOW}测试游戏服务连通性...${NC}"
+        response=$(curl --proxy socks5://127.0.0.1:40000 -s -o /dev/null -w "%{http_code}" "https://pgorelease.nianticlabs.com/plfe/version" --connect-timeout 5 2>/dev/null || echo "000")
         
-        # 创建虚拟接口
+        if [[ "$response" == "200" ]] || [[ "$response" == "301" ]] || [[ "$response" == "302" ]]; then
+            echo -e "${GREEN}✅ 通过 WARP 可以访问游戏服务！${NC}"
+        else
+            echo -e "${YELLOW}⚠️  游戏服务返回: $response${NC}"
+        fi
+        
+        # 创建 WARP 路由规则（用于 SS）
+        echo -e "\n${YELLOW}配置智能路由...${NC}"
+        
+        # 创建路由脚本
+        cat > /etc/shadowsocks/warp_route.sh <<'EOF'
+#!/bin/bash
+# WARP 智能路由脚本
+
+# 创建 ipset
+ipset create niantic_ips hash:net 2>/dev/null || true
+
+# 添加 Niantic IP 段
+ipset add niantic_ips 35.0.0.0/8 2>/dev/null || true
+ipset add niantic_ips 52.0.0.0/8 2>/dev/null || true
+ipset add niantic_ips 130.211.0.0/16 2>/dev/null || true
+
+# 标记需要走 WARP 的流量
+iptables -t mangle -N WARP_MARK 2>/dev/null || true
+iptables -t mangle -F WARP_MARK
+iptables -t mangle -A WARP_MARK -m set --match-set niantic_ips dst -j MARK --set-mark 1
+
+# 应用规则
+iptables -t mangle -A OUTPUT -j WARP_MARK
+
+# 配置路由表
+ip rule add fwmark 1 table 100 2>/dev/null || true
+ip route add default via 127.0.0.1 dev lo table 100 2>/dev/null || true
+EOF
+        
+        chmod +x /etc/shadowsocks/warp_route.sh
+        
+        # 创建 systemd 服务
         cat > /etc/systemd/system/warp-route.service <<EOF
 [Unit]
-Description=WARP Route Configuration
+Description=WARP Smart Route
 After=network.target warp-svc.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/bash -c 'ip link add warp type dummy 2>/dev/null || true; ip link set warp up; iptables -t nat -A POSTROUTING -o warp -j MASQUERADE'
-ExecStop=/bin/bash -c 'ip link del warp 2>/dev/null || true'
+ExecStart=/etc/shadowsocks/warp_route.sh
 
 [Install]
 WantedBy=multi-user.target
@@ -572,9 +656,14 @@ EOF
         echo -e "${GREEN}✅ WARP 安装配置完成！${NC}"
         echo -e "\n${CYAN}WARP 信息：${NC}"
         echo "代理地址: socks5://127.0.0.1:40000"
-        echo "可用于 Shadowsocks 出站"
+        echo "状态: $(warp-cli status | grep Status | awk '{print $2}')"
+        echo -e "\n${YELLOW}现在可以创建使用 WARP 出口的节点了！${NC}"
     else
-        echo -e "${RED}❌ WARP 连接失败，请检查网络${NC}"
+        echo -e "${RED}❌ WARP 连接失败${NC}"
+        echo "请检查："
+        echo "1. 网络连接是否正常"
+        echo "2. 系统是否支持 WARP"
+        echo "3. 尝试手动运行: warp-cli connect"
     fi
     
     echo ""
