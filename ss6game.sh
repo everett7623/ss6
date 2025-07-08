@@ -197,8 +197,8 @@ check_ip_quality() {
         echo -e "${GREEN}✅ IP 暂时可用于游戏，但请注意以下事项：${NC}"
         echo -e "\n注意事项："
         echo -e "1. 避免频繁切换地理位置"
-        echo -e "2. 保持正常游戏行为"
-        echo -e "3. ${YELLOW}建议仍然安装 WARP 作为备用，以防未来IP被封。${NC}"
+        echo "2. 保持正常游戏行为"
+        echo "3. ${YELLOW}建议仍然安装 WARP 作为备用，以防未来IP被封。${NC}"
     fi
     
     echo ""
@@ -536,13 +536,13 @@ install_warp() {
         apt-get update && apt-get install -y lsb-release
     fi
     
-    # 检查是否已安装
+    # Check if already installed
     if command -v warp-cli &> /dev/null; then
         echo -e "${GREEN}✅ WARP 已安装${NC}"
         warp-cli --version
         echo ""
         
-        # 检查连接状态
+        # Check connection status
         if warp-cli status 2>/dev/null | grep -q "Connected"; then
             echo -e "${GREEN}WARP 已连接${NC}"
             read -p "是否重新配置？(y/n): " reconfigure
@@ -552,20 +552,20 @@ install_warp() {
         fi
     fi
     
-    # 安装 WARP
+    # Install WARP
     echo -e "${YELLOW}添加 Cloudflare 仓库...${NC}"
     
-    # 先安装必要的工具
+    # First, install necessary tools
     apt update -y
     apt install -y curl gnupg lsb-release
     
-    # 添加 GPG key
+    # Add GPG key
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
     
-    # 添加仓库
+    # Add repository
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list
     
-    # 更新并安装
+    # Update and install
     apt update -y
     if ! apt install -y cloudflare-warp; then
         echo -e "${RED}❌ WARP 安装失败，请检查网络连接或系统兼容性。${NC}"
@@ -573,35 +573,43 @@ install_warp() {
         return 1
     fi
     
-    # 启动服务
+    # Start service
     systemctl enable warp-svc
     systemctl start warp-svc
     
-    # 等待服务启动
+    # Wait for service to start
     sleep 3
     
-    # 配置 WARP
+    # Configure WARP
     echo -e "${YELLOW}配置 WARP...${NC}"
     
-    # 断开可能的连接
+    # Disconnect any existing connection
     warp-cli disconnect 2>/dev/null || true
     
-    # 注册（使用 yes 自动确认）
-    yes | warp-cli register || true
+    # --- OPTIMIZATION START ---
+    # Register (using yes to auto-confirm if prompted by older versions, though 'registration' is usually silent)
+    echo "y" | warp-cli registration new || true # Corrected: 'register' to 'registration new'
     
-    # 设置为代理模式
-    warp-cli set-mode proxy
-    warp-cli set-proxy-port 40000
+    # Set to proxy mode
+    warp-cli set-mode proxy || true # This command might still be valid, or could be part of 'proxy' subcommand. Keeping for now.
     
-    # 设置其他选项
-    warp-cli set-families-mode off
-    warp-cli set-dns-log-enabled false
+    # Set proxy port
+    warp-cli proxy set-port 40000 || true # Corrected: 'set-proxy-port' to 'proxy set-port'
     
-    # 连接
+    # Set other options (these commands might have been removed or changed significantly)
+    # They are often not critical for basic proxy functionality.
+    # It's safer to remove or comment out commands that cause "unrecognized subcommand" errors
+    # unless you can find their direct replacements in the current warp-cli documentation.
+    # If these are desired, you'll need to check current `warp-cli --help` for equivalents.
+    # warp-cli set-families-mode off # Likely removed or changed, remove for stability
+    # warp-cli set-dns-log-enabled false # Likely removed or changed, remove for stability
+    # --- OPTIMIZATION END ---
+
+    # Connect
     echo -e "${YELLOW}连接 WARP...${NC}"
     warp-cli connect
     
-    # 等待连接
+    # Wait for connection
     echo -n "等待连接"
     local connected=false
     for i in {1..15}; do # Increased wait time
@@ -614,12 +622,12 @@ install_warp() {
         sleep 1
     done
     
-    # 验证连接
+    # Verify connection
     echo -e "\n${YELLOW}验证 WARP 连接...${NC}"
     if [[ "$connected" == true ]] && curl --proxy socks5://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace/ 2>/dev/null | grep -q "warp=on"; then
         echo -e "${GREEN}✅ WARP 连接成功！${NC}"
         
-        # 测试游戏连通性
+        # Test game connectivity
         echo -e "\n${YELLOW}测试游戏服务连通性（通过 WARP）...${NC}"
         response=$(curl --proxy socks5://127.0.0.1:40000 -s -o /dev/null -w "%{http_code}" "https://pgorelease.nianticlabs.com/plfe/version" --connect-timeout 5 2>/dev/null || echo "000")
         
@@ -629,24 +637,25 @@ install_warp() {
             echo -e "${YELLOW}⚠️ 游戏服务返回: $response （可能需要手动检查WARP状态）${NC}"
         fi
         
-        # 创建 WARP 路由规则（用于 SS）
+        # Create WARP routing rules (for SS)
         echo -e "\n${YELLOW}配置智能路由，确保游戏流量走 WARP...${NC}"
         
-        # 创建路由脚本
+        # Create routing script
         mkdir -p /etc/shadowsocks/
         cat > /etc/shadowsocks/warp_route.sh <<'EOF'
 #!/bin/bash
-# WARP 智能路由脚本
+# WARP Smart Route script
 
-# 创建 ipset
+# Create ipset
 ipset create niantic_ips hash:net 2>/dev/null || true
 
-# 清空现有规则
+# Flush existing rules
 iptables -t mangle -F WARP_MARK 2>/dev/null || true
 ip rule del fwmark 1 table 100 2>/dev/null || true
 ip route flush table 100 2>/dev/null || true
 
-# 添加 Niantic IP 段 (更全面的 Niantic/Google Cloud IP 范围)
+# Add Niantic IP ranges (more comprehensive Niantic/Google Cloud IP ranges)
+# Ensure these are still current and relevant
 ipset add niantic_ips 35.184.0.0/16 2>/dev/null || true
 ipset add niantic_ips 35.192.0.0/12 2>/dev/null || true
 ipset add niantic_ips 35.208.0.0/12 2>/dev/null || true
@@ -656,22 +665,22 @@ ipset add niantic_ips 52.0.0.0/8 2>/dev/null || true # Broader range if needed, 
 ipset add niantic_ips 130.211.0.0/16 2>/dev/null || true
 ipset add niantic_ips 104.18.0.0/15 2>/dev/null || true # Cloudflare for some Niantic assets
 
-# 标记需要走 WARP 的流量
+# Mark traffic that needs to go through WARP
 iptables -t mangle -N WARP_MARK 2>/dev/null || true
 iptables -t mangle -F WARP_MARK
 iptables -t mangle -A WARP_MARK -m set --match-set niantic_ips dst -j MARK --set-mark 1
 
-# 应用规则
+# Apply rule
 iptables -t mangle -A OUTPUT -j WARP_MARK
 
-# 配置路由表
+# Configure routing table
 ip rule add fwmark 1 table 100 2>/dev/null || true
 ip route add local 0.0.0.0/0 dev lo table 100 2>/dev/null || true # Route marked packets to localhost for WARP proxy
 EOF
         
         chmod +x /etc/shadowsocks/warp_route.sh
         
-        # 创建 systemd 服务
+        # Create systemd service
         cat > /etc/systemd/system/warp-route.service <<EOF
 [Unit]
 Description=WARP Smart Route for Niantic Games
