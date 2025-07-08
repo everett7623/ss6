@@ -46,6 +46,26 @@ get_country_flag() {
         "VN") FLAG="🇻🇳" COUNTRY="越南" ;;
         "PH") FLAG="🇵🇭" COUNTRY="菲律宾" ;;
         "ID") FLAG="🇮🇩" COUNTRY="印尼" ;;
+        "TR") FLAG="🇹🇷" COUNTRY="土耳其" ;;
+        "UA") FLAG="🇺🇦" COUNTRY="乌克兰" ;;
+        "ES") FLAG="🇪🇸" COUNTRY="西班牙" ;;
+        "IT") FLAG="🇮🇹" COUNTRY="意大利" ;;
+        "MD") FLAG="🇲🇩" COUNTRY="摩尔多瓦" ;;
+        "HU") FLAG="🇭🇺" COUNTRY="匈牙利" ;;
+        "IL") FLAG="🇮🇱" COUNTRY="以色列" ;;
+        "AR") FLAG="🇦🇷" COUNTRY="阿根廷" ;;
+        "NG") FLAG="🇳🇬" COUNTRY="尼日利亚" ;;
+        "ZA") FLAG="🇿🇦" COUNTRY="南非" ;;
+        "EG") FLAG="🇪🇬" COUNTRY="埃及" ;;
+        "PK") FLAG="🇵🇰" COUNTRY="巴基斯坦" ;;
+        "SE") FLAG="🇸🇪" COUNTRY="瑞典" ;;
+        "CH") FLAG="🇨🇭" COUNTRY="瑞士" ;;
+        "PL") FLAG="🇵🇱" COUNTRY="波兰" ;;
+        "IE") FLAG="🇮🇪" COUNTRY="爱尔兰" ;;
+        "FI") FLAG="🇫🇮" COUNTRY="芬兰" ;;
+        "NO") FLAG="🇳🇴" COUNTRY="挪威" ;;
+        "AT") FLAG="🇦🇹" COUNTRY="奥地利" ;;
+        "BE") FLAG="🇧🇪" COUNTRY="比利时" ;;
         *) FLAG="🌍" COUNTRY="未知" ;;
     esac
     LOCATION=$(curl -s --connect-timeout 3 https://ipapi.co/city || echo "Unknown")
