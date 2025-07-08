@@ -291,7 +291,7 @@ show_result() {
     
     # Clash 配置
     echo -e "\n${CYAN}━━━━━━━━━━━━ Clash 配置 ━━━━━━━━━━━━${NC}"
-    echo -e "${PURPLE}$CLASH_V6${NC}"
+    echo -e "${YELLOW}$CLASH_V6${NC}"
     [ -n "$CLASH_V4" ] && echo -e "${PURPLE}$CLASH_V4${NC}"
     
     # 使用说明
