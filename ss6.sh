@@ -35,8 +35,8 @@ systemctl restart shadowsocks-libev
 ENCODED=$(echo -n "$METHOD:$PASSWORD@$IPV6_ADDR:$PORT" | base64 -w 0)
 SS_LINK="ss://$ENCODED#$TAG"
 
-# ========= Clash 节点 =========
-CLASH_NODE="- {name: \"$TAG\", type: ss, server: \"$IPV6_ADDR\", port: $PORT, cipher: \"$METHOD\", password: \"$PASSWORD\", udp: true}"
+# ========= Clash 节点（使用单引号） =========
+CLASH_NODE="- { name: '$TAG', type: ss, server: '$IPV6_ADDR', port: $PORT, cipher: '$METHOD', password: '$PASSWORD', udp: true }"
 
 # ========= V2rayN JSON 节点 =========
 V2RAYN_JSON=$(cat <<EOF
@@ -65,7 +65,7 @@ echo -e "\n========= 📱 SS 链接 ========="
 echo "$SS_LINK"
 qrencode -t ANSIUTF8 "$SS_LINK"
 
-echo -e "\n========= 🧩 Clash 节点 ========="
+echo -e "\n========= 🧩 Clash 节点（单引号） ========="
 echo "$CLASH_NODE"
 
 echo -e "\n========= 💻 V2rayN JSON节点 ========="
