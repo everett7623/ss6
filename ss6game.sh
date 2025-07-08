@@ -1,7 +1,9 @@
 #!/bin/bash
 # ========================================
-# Shadowsocks IPv6 安全版安装脚本
-# 修正版：不会影响系统IPv6配置
+# Shadowsocks IPv6 专用游戏优化版脚本
+# 要求：必须有 IPv6（纯IPv6 或 双栈）
+# 说明：纯IPv4环境易被封禁，脚本将退出
+# 特别优化：Ingress 等游戏
 # ========================================
 
 set -e
@@ -85,10 +87,20 @@ check_ip_stack() {
         IPV6_SUPPORTED=false
     fi
     
-    # 检查结果
-    if [ "$IPV4_SUPPORTED" = false ] && [ "$IPV6_SUPPORTED" = false ]; then
-        echo -e "${RED}❌ 未检测到任何可用的公网IP${NC}"
+    # 检查结果 - 必须有 IPv6 才继续
+    if [ "$IPV6_SUPPORTED" = false ]; then
+        echo -e "${RED}❌ 未检测到 IPv6 地址${NC}"
+        echo -e "${YELLOW}⚠️  此脚本仅支持有 IPv6 的服务器${NC}"
+        echo -e "${YELLOW}   纯 IPv4 环境下 Shadowsocks 容易被封禁${NC}"
+        echo -e "${YELLOW}   建议使用支持 IPv6 的 VPS${NC}"
         exit 1
+    fi
+    
+    # 显示网络模式
+    if [ "$IPV4_SUPPORTED" = true ] && [ "$IPV6_SUPPORTED" = true ]; then
+        echo -e "${GREEN}✓ 网络模式: 双栈 (IPv4 + IPv6)${NC}"
+    else
+        echo -e "${GREEN}✓ 网络模式: 纯 IPv6${NC}"
     fi
 }
 
@@ -120,14 +132,22 @@ EOF
 generate_config() {
     echo -e "${BLUE}📝 生成配置文件...${NC}"
     
-    # 根据 IP 支持情况决定监听地址
-    if [ "$IPV6_SUPPORTED" = true ]; then
-        SERVER_ADDR="::"  # IPv6 双栈监听
+    # 根据 IP 支持情况决定监听地址和主要地址
+    if [ "$IPV6_SUPPORTED" = true ] && [ "$IPV4_SUPPORTED" = true ]; then
+        # 双栈：IPv6 优先
+        SERVER_ADDR="::"  # 监听所有地址
+        PRIMARY_ADDR="[$IPV6_ADDR]"
+        PRIMARY_ADDR_PLAIN="$IPV6_ADDR"
+        TAG="${TAG}-Dual"
+    elif [ "$IPV6_SUPPORTED" = true ]; then
+        # 仅 IPv6
+        SERVER_ADDR="::"
         PRIMARY_ADDR="[$IPV6_ADDR]"
         PRIMARY_ADDR_PLAIN="$IPV6_ADDR"
         TAG="${TAG}-IPv6"
     else
-        SERVER_ADDR="0.0.0.0"  # 仅 IPv4
+        # 仅 IPv4
+        SERVER_ADDR="0.0.0.0"
         PRIMARY_ADDR="$IPV4_ADDR"
         PRIMARY_ADDR_PLAIN="$IPV4_ADDR"
         TAG="${TAG}-IPv4"
@@ -190,36 +210,26 @@ setup_firewall() {
 generate_nodes() {
     echo -e "${BLUE}🔧 生成节点配置...${NC}"
     
-    # SS 链接
+    # 主节点 SS 链接
     ENCODED=$(echo -n "$METHOD:$PASSWORD@$PRIMARY_ADDR_PLAIN:$PORT" | base64 -w 0)
     SS_LINK="ss://$ENCODED#$TAG"
     
-    # IPv4 备用链接（如果支持双栈）
+    # 双栈环境下生成 IPv4 备用链接
     if [ "$IPV4_SUPPORTED" = true ] && [ "$IPV6_SUPPORTED" = true ]; then
         ENCODED_V4=$(echo -n "$METHOD:$PASSWORD@$IPV4_ADDR:$PORT" | base64 -w 0)
         SS_LINK_V4="ss://$ENCODED_V4#${FLAG}SS-${LOCATION}-IPv4"
     fi
     
-    # Clash 节点
+    # Clash 节点配置
     CLASH_NODE="- { name: '$TAG', type: ss, server: '$PRIMARY_ADDR_PLAIN', port: $PORT, cipher: '$METHOD', password: '$PASSWORD', udp: true }"
     
-    # V2Ray 格式
-    V2RAY_VMESS=$(cat <<EOF
-{
-  "v": "2",
-  "ps": "$TAG",
-  "add": "$PRIMARY_ADDR_PLAIN",
-  "port": "$PORT",
-  "id": "",
-  "aid": "0",
-  "net": "tcp",
-  "type": "none",
-  "host": "",
-  "path": "",
-  "tls": ""
-}
-EOF
-)
+    # 双栈环境下的 Clash IPv4 备用节点
+    if [ "$IPV4_SUPPORTED" = true ] && [ "$IPV6_SUPPORTED" = true ]; then
+        CLASH_NODE_V4="- { name: '${FLAG}SS-${LOCATION}-IPv4', type: ss, server: '$IPV4_ADDR', port: $PORT, cipher: '$METHOD', password: '$PASSWORD', udp: true }"
+    fi
+    
+    # V2Ray 格式（用于支持 V2Ray 的客户端）
+    V2RAY_LINK="ss://$(echo -n "$METHOD:$PASSWORD@$PRIMARY_ADDR_PLAIN:$PORT" | base64 -w 0)#$TAG"
 }
 
 # ========= 输出结果 =========
@@ -260,6 +270,13 @@ show_result() {
     echo -e "\n${CYAN}🧩 Clash 配置${NC}"
     echo -e "════════════════════════════════════════"
     echo -e "${PURPLE}$CLASH_NODE${NC}"
+    if [ -n "$CLASH_NODE_V4" ]; then
+        echo -e "${PURPLE}$CLASH_NODE_V4${NC}"
+    fi
+    
+    echo -e "\n${CYAN}🚀 V2Ray 链接${NC}"
+    echo -e "════════════════════════════════════════"
+    echo -e "${PURPLE}$V2RAY_LINK${NC}"
     
     echo -e "\n${CYAN}💡 使用提示${NC}"
     echo -e "════════════════════════════════════════"
@@ -276,7 +293,8 @@ show_result() {
 # ========= 主函数 =========
 main() {
     echo -e "${BLUE}════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  Shadowsocks 安全版安装脚本           ${NC}"
+    echo -e "${BLUE}  Shadowsocks IPv6 专用优化版          ${NC}"
+    echo -e "${BLUE}  仅支持 IPv6 或 IPv4+IPv6 双栈环境    ${NC}"
     echo -e "${BLUE}════════════════════════════════════════${NC}\n"
     
     check_system
