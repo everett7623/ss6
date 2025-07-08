@@ -1,7 +1,7 @@
 #!/bin/bash
 # ========================================
 # Shadowsocks IPv6 专用安装脚本
-# 要求：必须有 IPv6（纯IPv6 或 双栈）
+# 要求：必须有 IPv6 地址
 # 说明：纯IPv4环境易被封禁，脚本将退出
 # ========================================
 
@@ -10,11 +10,10 @@ set -e
 # ========= 颜色定义 =========
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 WHITE='\033[0;37m'
+ORANGE='\033[0;33m'
 NC='\033[0m'
 
 # ========= 配置部分 =========
@@ -75,19 +74,9 @@ install_dependencies() {
     echo -e "${GREEN}✓ 组件安装完成${NC}"
 }
 
-# ========= IPv4/IPv6 检测 =========
+# ========= IPv6 检测 =========
 check_ip_stack() {
     echo -e "${BLUE}🔍 检测网络环境...${NC}"
-    
-    # 检测 IPv4
-    IPV4_ADDR=$(curl -4 -s --connect-timeout 3 https://api.ipify.org || echo "")
-    if [ -n "$IPV4_ADDR" ]; then
-        echo -e "${GREEN}✓ IPv4: $IPV4_ADDR${NC}"
-        IPV4_SUPPORTED=true
-    else
-        echo -e "${YELLOW}✗ IPv4: 不支持${NC}"
-        IPV4_SUPPORTED=false
-    fi
     
     # 检测 IPv6
     IPV6_ADDR=$(ip -6 addr show scope global | grep inet6 | grep -v "temporary\|deprecated" | awk '{print $2}' | cut -d/ -f1 | head -n1)
@@ -97,11 +86,11 @@ check_ip_stack() {
             echo -e "${GREEN}✓ IPv6: $IPV6_ADDR${NC}"
             IPV6_SUPPORTED=true
         else
-            echo -e "${YELLOW}! IPv6 地址存在但无法连接外网${NC}"
+            echo -e "${ORANGE}! IPv6 地址存在但无法连接外网${NC}"
             IPV6_SUPPORTED=false
         fi
     else
-        echo -e "${YELLOW}✗ IPv6: 不支持${NC}"
+        echo -e "${ORANGE}✗ IPv6: 不支持${NC}"
         IPV6_SUPPORTED=false
     fi
     
@@ -109,21 +98,15 @@ check_ip_stack() {
     if [ "$IPV6_SUPPORTED" = false ]; then
         echo -e "\n${RED}════════════════════════════════════════${NC}"
         echo -e "${RED}❌ 未检测到可用的 IPv6 地址${NC}"
-        echo -e "${YELLOW}⚠️  此脚本仅支持有 IPv6 的服务器${NC}"
-        echo -e "${YELLOW}   纯 IPv4 环境下 Shadowsocks 容易被封${NC}"
-        echo -e "${YELLOW}   建议使用支持 IPv6 的 VPS 提供商${NC}"
+        echo -e "${ORANGE}⚠️  此脚本仅支持有 IPv6 的服务器${NC}"
+        echo -e "${ORANGE}   纯 IPv4 环境下 Shadowsocks 容易被封${NC}"
+        echo -e "${ORANGE}   建议使用支持 IPv6 的 VPS 提供商${NC}"
         echo -e "${RED}════════════════════════════════════════${NC}"
         exit 1
     fi
     
     # 显示网络模式
-    if [ "$IPV4_SUPPORTED" = true ] && [ "$IPV6_SUPPORTED" = true ]; then
-        echo -e "${GREEN}✓ 网络模式: 双栈 (IPv4 + IPv6)${NC}"
-        NETWORK_MODE="dual"
-    else
-        echo -e "${GREEN}✓ 网络模式: 纯 IPv6${NC}"
-        NETWORK_MODE="ipv6only"
-    fi
+    echo -e "${GREEN}✓ 网络模式: IPv6${NC}"
 }
 
 # ========= 系统优化 =========
@@ -160,13 +143,8 @@ generate_config() {
     echo -e "${BLUE}📝 生成配置文件...${NC}"
     
     # 生成标签名
-    if [ "$NETWORK_MODE" = "dual" ]; then
-        TAG="${FLAG}${COUNTRY}-双栈"
-        TAG_EN="${FLAG}${LOCATION}-Dual"
-    else
-        TAG="${FLAG}${COUNTRY}-IPv6"
-        TAG_EN="${FLAG}${LOCATION}-IPv6"
-    fi
+    TAG="${FLAG}${COUNTRY}-IPv6"
+    TAG_EN="${FLAG}${LOCATION}-IPv6"
     
     # 生成 SS 配置
     cat > /etc/shadowsocks-libev/config.json <<EOF
@@ -209,10 +187,8 @@ start_service() {
 setup_firewall() {
     echo -e "${BLUE}🔥 配置防火墙规则...${NC}"
     
-    # iptables 规则
-    if command -v iptables >/dev/null 2>&1; then
-        iptables -I INPUT -p tcp --dport $PORT -j ACCEPT >/dev/null 2>&1
-        iptables -I INPUT -p udp --dport $PORT -j ACCEPT >/dev/null 2>&1
+    # ip6tables 规则
+    if command -v ip6tables >/dev/null 2>&1; then
         ip6tables -I INPUT -p tcp --dport $PORT -j ACCEPT >/dev/null 2>&1
         ip6tables -I INPUT -p udp --dport $PORT -j ACCEPT >/dev/null 2>&1
     fi
@@ -235,21 +211,12 @@ setup_firewall() {
 
 # ========= 生成节点信息 =========
 generate_nodes() {
-    # IPv6 SS 链接（主要）
+    # IPv6 SS 链接
     ENCODED_V6=$(echo -n "$METHOD:$PASSWORD@[$IPV6_ADDR]:$PORT" | base64 -w 0)
     SS_LINK_V6="ss://$ENCODED_V6#$TAG_EN"
     
-    # IPv4 SS 链接（如果支持）
-    if [ "$IPV4_SUPPORTED" = true ]; then
-        ENCODED_V4=$(echo -n "$METHOD:$PASSWORD@$IPV4_ADDR:$PORT" | base64 -w 0)
-        SS_LINK_V4="ss://$ENCODED_V4#${FLAG}${LOCATION}-IPv4"
-    fi
-    
     # Clash 配置
     CLASH_V6="- {name: '$TAG', type: ss, server: '$IPV6_ADDR', port: $PORT, cipher: '$METHOD', password: '$PASSWORD', udp: true}"
-    if [ "$IPV4_SUPPORTED" = true ]; then
-        CLASH_V4="- {name: '${FLAG}${COUNTRY}-IPv4', type: ss, server: '$IPV4_ADDR', port: $PORT, cipher: '$METHOD', password: '$PASSWORD', udp: true}"
-    fi
 }
 
 # ========= 输出结果 =========
@@ -264,35 +231,25 @@ show_result() {
     # 服务器信息
     echo -e "\n${CYAN}━━━━━━━━━━━━ 服务器信息 ━━━━━━━━━━━━${NC}"
     echo -e "${WHITE}位置${NC}     ${FLAG} ${COUNTRY} - ${LOCATION}"
-    echo -e "${WHITE}网络${NC}     $([ "$NETWORK_MODE" = "dual" ] && echo "双栈模式" || echo "纯 IPv6")"
     echo -e "${WHITE}IPv6${NC}     ${GREEN}[$IPV6_ADDR]${NC}"
-    [ "$IPV4_SUPPORTED" = true ] && echo -e "${WHITE}IPv4${NC}     ${GREEN}$IPV4_ADDR${NC}"
     
     # 连接信息
     echo -e "\n${CYAN}━━━━━━━━━━━━ 连接信息 ━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}端口${NC}     ${YELLOW}$PORT${NC}"
-    echo -e "${WHITE}密码${NC}     ${YELLOW}$PASSWORD${NC}"
-    echo -e "${WHITE}加密${NC}     ${YELLOW}$METHOD${NC}"
+    echo -e "${WHITE}端口${NC}     ${GREEN}$PORT${NC}"
+    echo -e "${WHITE}密码${NC}     ${GREEN}$PASSWORD${NC}"
+    echo -e "${WHITE}加密${NC}     ${GREEN}$METHOD${NC}"
     
     # SS 链接
     echo -e "\n${CYAN}━━━━━━━━━━━━ SS 链接 ━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}IPv6 链接（推荐）：${NC}"
     echo -e "${BLUE}$SS_LINK_V6${NC}"
-    
-    if [ "$IPV4_SUPPORTED" = true ]; then
-        echo -e "\n${WHITE}IPv4 链接（备用）：${NC}"
-        echo -e "${BLUE}$SS_LINK_V4${NC}"
-    fi
     
     # 二维码
     echo -e "\n${CYAN}━━━━━━━━━━━━ 二维码 ━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}IPv6 节点二维码：${NC}"
     qrencode -t ANSIUTF8 "$SS_LINK_V6"
     
     # Clash 配置
     echo -e "\n${CYAN}━━━━━━━━━━━━ Clash 配置 ━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}$CLASH_V6${NC}"
-    [ -n "$CLASH_V4" ] && echo -e "${PURPLE}$CLASH_V4${NC}"
+    echo -e "${GREEN}$CLASH_V6${NC}"
     
     # 使用说明
     echo -e "\n${CYAN}━━━━━━━━━━━━ 使用说明 ━━━━━━━━━━━━${NC}"
@@ -325,7 +282,6 @@ show_result() {
 main() {
     echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║   Shadowsocks IPv6 专用安装脚本      ║${NC}"
-    echo -e "${BLUE}║   支持: 纯 IPv6 / IPv4+IPv6 双栈     ║${NC}"
     echo -e "${BLUE}╚══════════════════════════════════════╝${NC}\n"
     
     check_system
