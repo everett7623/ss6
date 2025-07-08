@@ -31,7 +31,7 @@ EOF
 systemctl enable shadowsocks-libev
 systemctl restart shadowsocks-libev
 
-# ========= 节点链接生成 =========
+# ========= 节点生成 =========
 ENCODED=$(echo -n "$METHOD:$PASSWORD@$IPV6_ADDR:$PORT" | base64 -w 0)
 SS_LINK="ss://$ENCODED#$TAG"
 
@@ -46,7 +46,7 @@ echo "端口: $PORT"
 echo "密码: $PASSWORD"
 echo "加密方式: $METHOD"
 
-echo -e "\n========= 📱 SS 链接 ========="
+echo -e "\n========= 📱 SS 节点 ========="
 echo "$SS_LINK"
 qrencode -t ANSIUTF8 "$SS_LINK"
 
